@@ -7,8 +7,8 @@
 % Copyright (C) 2004 C. Bonadonna and G. Marani
 %
 % Updates by Sebastien Biass (Departement of Earth Sciences, University of Geneva, Switzerland, 2012)
-% Novembre 2015: version 2
-%                           
+% Novembre 2015:    version 2
+% January 2016:     Added parameters of Inman (1952), minor bug fixes                          
 %
 % Email contact: costanza.bonadonna@unige.ch, sebastien.biasse@unige.ch
 %
@@ -380,6 +380,16 @@ tr.m     = mass;
 tr.gClass= gClass;
 tr.gwt   = gwt;
 
+% Prepare GS binning for later display
+if get(t.diam_mm, 'Value') == 1     % If input in mm
+    tr.pClass = -log2(tr.gClass');
+    tr.mClass = tr.gClass';
+else                                % If input in phi
+    tr.pClass = gClass';
+    tr.mClass = 2.^-gClass';
+end
+
+
 set(t.inp_e, 'String', txt2read); 
 set(t.zero_p, 'Enable', 'on');
 set(t.ok_p, 'Enable', 'on');
@@ -562,7 +572,8 @@ hold on
 % Plot patch with color as total mass in the cell
 for i = 1:length(cg)
     if all(cg{i}~=1) && PolyMass(i) ~= 0
-        patch(vg(cg{i},1), vg(cg{i},2), log10(PolyMass(i)/1000));
+        %patch(vg(cg{i},1), vg(cg{i},2), log10(PolyMass(i)/1000));
+        patch(vg(cg{i},1), vg(cg{i},2), polyarea(v(c{i}',1), v(c{i}',2)));
     end
 end
 alpha .7        % Transparency
@@ -575,37 +586,53 @@ ylabel('Latitude');
 plot_google_map
 
 
-res_voron(tr.gClass, vorWt);
+res_voron(vorWt);
 
 % Calculations and results                        
-function res_voron(mClass, vorWt) 
-global tr tmp t r
-
-% Convert mm 2 phi
-if get(t.diam_mm, 'Value') == 1
-    pClass = -log2(tr.gClass');
-else
-    pClass = tr.gClass';
-end
+function res_voron(vorWt) 
+global tr tmp r
 
 % Cumulative
-cum = zeros(size(pClass));
+cum = zeros(size(tr.pClass));
 for i = 1:length(cum)
     cum(i) = 1-sum(vorWt(1:i))/sum(vorWt);
 end
 
-tmp = [mClass', pClass, vorWt, cum];
+% Prepare result table
+tmp = [tr.mClass, tr.pClass, vorWt, cum];
 data_table = cell(size(tmp,1),4);
 for i = 1:size(tmp,1)
     for j = 1:4
-        data_table{i,j} = sprintf('%.2f', tmp(i,j));
+        data_table{i,j} = sprintf('%.3f', tmp(i,j));
     end
 end
 
-gs_50       = get_perc(.5, cum, pClass);    % Median GS
-gs_16       = get_perc(.16, cum, pClass);   % 14th percentile
-gs_84       = get_perc(.84, cum, pClass);   % 86th percentile
-gs_std_new  = (gs_84 - gs_16)/2;            % std
+
+% Calculate parameters according to Table 1 of Inman (1952)
+gs_50       = get_perc(.5, cum, tr.pClass);    % Median GS
+gs_5        = get_perc(.05, cum, tr.pClass);   % 5th percentile
+gs_16       = get_perc(.16, cum, tr.pClass);   % 16th percentile
+gs_84       = get_perc(.84, cum, tr.pClass);   % 84th percentile
+gs_95       = get_perc(.95, cum, tr.pClass);   % 95th percentile
+gs_std_new  = (gs_84 - gs_16)/2;               % std
+gs_mean     = (gs_16 + gs_84)/2;               % Mean
+gs_skw      = (gs_mean - gs_50)/gs_std_new;    % Skewness
+gs_kurt     = (.5*(gs_95-gs_5)-gs_std_new)/gs_std_new; % Kurtosis
+
+% Prepare summary table
+sum_table       = cell(11,2);
+sum_table(1,:)  = {sprintf('%.3f', gs_50), sprintf('%.4f', 2^-gs_50)};
+sum_table(2,:)  = {sprintf('%.3f', gs_std_new), sprintf('%.4f', 2^-gs_std_new)};
+sum_table(3,:)  = {'', ''};
+sum_table(4,:)  = {sprintf('%.3f', gs_mean), sprintf('%.4f', 2^-gs_mean)};
+sum_table(5,:)  = {sprintf('%.3f', gs_skw), sprintf('%.4f', 2^-gs_skw)};
+sum_table(6,:)  = {sprintf('%.3f', gs_kurt), sprintf('%.4f', 2^-gs_kurt)};
+sum_table(7,:)  = {'', ''};
+sum_table(8,:)  = {sprintf('%.3f', gs_5), sprintf('%.4f', 2^-gs_5)};
+sum_table(9,:)  = {sprintf('%.3f', gs_16), sprintf('%.4f', 2^-gs_16)};
+sum_table(10,:) = {sprintf('%.3f', gs_84), sprintf('%.4f', 2^-gs_84)};
+sum_table(11,:) = {sprintf('%.3f', gs_95), sprintf('%.4f', 2^-gs_95)};
+
 
 scr = get(0,'ScreenSize');
 w   = 750;
@@ -655,15 +682,15 @@ r.fig = figure(...
         r.tab2 = uitable(...
             'parent', r.main,...
             'units', 'normalized',...
-            'position', [.475 .175 .323 .112],...
+            'position', [.37 .125 .55 .225],...
             'BackgroundColor', [.3 .3 .3; .2 .2 .2],...
             'ColumnName', {'phi', 'mm'},...
-            'ColumnWidth', {60, 60},...
-            'ColumnFormat', {'numeric', 'numeric'},...
+            'ColumnWidth', {160, 160},...
+            'ColumnFormat', {'char', 'char'},...
             'ColumnEditable', [false false],...
-            'Data', [gs_50, 2^-(gs_50); gs_std_new, 2^-(gs_std_new)],...
+            'Data', sum_table,...
             'RowStriping', 'on',...
-            'RowName', {'Median', 'Sigma'},...
+            'RowName', {'Median', 'Sigma', '', 'Mean', 'Skewness', 'Kurtosis', '', '5th pctl', '16th pctl', '84th pctl', '95th pctl'},...
             'ForegroundColor', [1 1 1]);       
                 
        r.close_p = uicontrol(...
