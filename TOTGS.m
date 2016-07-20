@@ -183,8 +183,6 @@ t.fig = figure(...
                 'Enable', 'off',...
                 'TooltipString', 'Interactively define a line of 0 deposit from a map');
                 
-                
-
                 t.ok_p = uicontrol(...
                     'parent', t.main,...
                     'Style', 'pushbutton',...
@@ -452,6 +450,10 @@ global map tr
 
 %% Add point
 if strcmp(get(h, 'String'), 'Add points') && get(h, 'Value') == 1
+    
+    warndlg(sprintf('Cental mouse click to cancel the last point\nRight click to exit'));
+    uiwait
+    
     set(map.reset, 'Enable', 'off'); set(map.go, 'Enable', 'off'); set(map.add, 'String', 'Right click to exit!');
     hold on
     while get(h, 'Value') == 1        
@@ -462,7 +464,6 @@ if strcmp(get(h, 'String'), 'Add points') && get(h, 'Value') == 1
 %% Reset point
 elseif strcmp(get(h, 'String'), 'Reset')
     set(map.add, 'Enable', 'on');  
-    %delete(findobj(map.a, 'Marker', 'x'));
     delete(map.h1);
     delete(map.h2);
 %% Get data
@@ -779,17 +780,21 @@ function exp_cdf(~,~)
 
 function [lt, ln] = plot_voronoi(x,y,k)
     global map tr
-
-    zpoint     = findobj(map.h1, 'Marker', 'x'); % Retrueve added points
-    lt  = get(zpoint, 'YData')';
-    ln  = get(zpoint, 'XData')';
+    
+    if isfield(map, 'h1')
+        zpoint     = findobj(map.h1, 'Marker', 'x'); % Retrueve added points
+        lt  = get(zpoint, 'YData')';
+        ln  = get(zpoint, 'XData')';
+    else
+        lt = [];
+        ln = [];
+    end
     
     % Add and delete points
     if k < 3
         % If voronoi already exists, delete it
-        if ishandle(map.h2); delete(map.h2); end;
-        if ishandle(map.h1); delete(map.h1); end;
-
+        if isfield(map, 'h2'); delete(map.h2); end;
+        if isfield(map, 'h1'); delete(map.h1); end;
 
         if k == 1;
             ln = [x;ln];
