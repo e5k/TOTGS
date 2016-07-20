@@ -8,9 +8,10 @@
 %
 % Updates by Sebastien Biass (Departement of Earth Sciences, University of Geneva, Switzerland, 2012)
 % Novembre 2015:    version 2
-% January 2016:     Added parameters of Inman (1952), minor bug fixes                          
+% January 2016:     Added parameters of Inman (1952), minor bug fixes 
+% July 2016:        The delimitation of the 0-mass contour is now interactive
 %
-% Email contact: costanza.bonadonna@unige.ch, sebastien.biasse@unige.ch
+% Email contact: costanza.bonadonna@unige.ch, sbiasse@hawaii.edu
 %
 % This program is free software; 
 % you can redistribute it and/or modify it under the terms of the 
@@ -440,7 +441,7 @@ map.go = uicontrol(...
     'Callback', @process_zero);
 
 map.a  = axes('Parent', map.fig, 'Position', [.1 .2 .8 .75], 'Units', 'normalized', 'Box', 'on');
-plot(map.a, tr.lon, tr.lat, '.r','MarkerSize', 15); axis([min(tr.lon)-10 max(tr.lon+10) min(tr.lat)-10 max(tr.lat)+10]);
+map.p  = plot(map.a, tr.lon, tr.lat, '.r','MarkerSize', 15); axis([min(tr.lon)-10 max(tr.lon+10) min(tr.lat)-10 max(tr.lat)+10]);
 xlabel('Longitude'); ylabel('Latitude');
 plot_google_map
 hold on
@@ -455,40 +456,25 @@ if strcmp(get(h, 'String'), 'Add points') && get(h, 'Value') == 1
     hold on
     while get(h, 'Value') == 1        
         [x,y,k] = ginput(1);
-        if k == 1
-            map.h1      = plot(map.a,x,y,'xr');
-        else
-            zpoint     = findobj(map.a, 'Marker', 'x');
-            lt         = zeros(size(zpoint));
-            ln         = zeros(size(zpoint));
-            for i = 1:length(zpoint)
-                lt(i)  = get(zpoint(i), 'YData');
-                ln(i)  = get(zpoint(i), 'XData');
-            end
-            map.h2     = voronoi(map.a, [tr.lon;ln], [tr.lat;lt]);
-            set(map.reset, 'Enable', 'on'); set(map.go, 'Enable', 'on'); 
-            set(map.add, 'Value', 0, 'String', 'Add points', 'Enable', 'off');  
-            return
-        end
+        plot_voronoi(x,y,k);
     end
 
 %% Reset point
 elseif strcmp(get(h, 'String'), 'Reset')
     set(map.add, 'Enable', 'on');  
-    delete(findobj(map.a, 'Marker', 'x'));
+    %delete(findobj(map.a, 'Marker', 'x'));
+    delete(map.h1);
     delete(map.h2);
 %% Get data
 elseif strcmp(get(h, 'String'), 'Ok')
-    zpoint     = findobj(map.a, 'Marker', 'x');
-    lt         = zeros(size(zpoint));
-    ln         = zeros(size(zpoint));
-    for i = 1:length(zpoint)
-        lt(i)  = get(zpoint(i), 'YData');
-        ln(i)  = get(zpoint(i), 'XData');
-    end
+    zpoint     = findobj(map.h1, 'Marker', 'x');
+
+    lt  = get(zpoint, 'YData')';
+    ln  = get(zpoint, 'XData')';
+
     [dummyE, dummyN, dummyZ] = deg2utm(lt, ln);
     dummyZ  = num2cell(dummyZ,2);
-    % If zero contour is over more than 1 §zone
+    % If zero contour is over more than 1 zone
     if length(unique(dummyZ)) > 1
         dummy =  unique(dummyZ);
         dummy1= sscanf(dummy{1}, '%d');
@@ -791,7 +777,45 @@ function exp_cdf(~,~)
     xlabel('Diameter (phi)');
     ylabel('wt. %');
 
+function [lt, ln] = plot_voronoi(x,y,k)
+    global map tr
+
+    zpoint     = findobj(map.h1, 'Marker', 'x'); % Retrueve added points
+    lt  = get(zpoint, 'YData')';
+    ln  = get(zpoint, 'XData')';
     
+    % Add and delete points
+    if k < 3
+        % If voronoi already exists, delete it
+        if ishandle(map.h2); delete(map.h2); end;
+        if ishandle(map.h1); delete(map.h1); end;
+
+
+        if k == 1;
+            ln = [x;ln];
+            lt = [y;lt];
+            map.h1 = plot(map.a, ln, lt,'xr');
+        elseif k == 2
+            lt = lt(2:end);
+            ln = ln(2:end);
+            map.h1 = plot(map.a,ln,lt,'xr');
+        end
+
+        % Plot voronoi
+        [tX, tY]   = voronoi([tr.lon;ln], [tr.lat;lt]);
+        map.h2     = plot(map.a, [tr.lon;ln], [tr.lat;lt], 'k.', tX, tY, 'k-', 'LineWidth', .2);
+
+        % Reorder objects
+        uistack(map.p, 'top');
+        uistack(map.a, 'top');
+    
+    % Finish adding points
+    else
+        set(map.reset, 'Enable', 'on'); set(map.go, 'Enable', 'on');
+        set(map.add, 'Value', 0, 'String', 'Add points', 'Enable', 'off');
+        return
+    end
+        
 % Additional functions used throughout the code
 function [east_c, zone_c] = correct_utm(east, zone, ref_zone, lat)
 dummy  = unique(cellstr(zone));
