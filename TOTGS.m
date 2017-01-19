@@ -451,7 +451,7 @@ global map tr
 %% Add point
 if strcmp(get(h, 'String'), 'Add points') && get(h, 'Value') == 1
     
-    warndlg(sprintf('Cental mouse click to cancel the last point\nRight click to exit'));
+    warndlg(sprintf('Central mouse click to cancel the last point\nRight click to exit'));
     uiwait
     
     set(map.reset, 'Enable', 'off'); set(map.go, 'Enable', 'off'); set(map.add, 'String', 'Right click to exit!');
@@ -1486,7 +1486,7 @@ function  [x,y,utmzone] = deg2utm(Lat,Lon)
 
 % Argument checking
 %
-error(nargchk(2, 2, nargin));  %2 arguments required
+%error(nargchk(2, 2, nargin));  %2 arguments required
 n1=length(Lat);
 n2=length(Lon);
 if (n1~=n2)
@@ -1623,7 +1623,7 @@ function  [Lat,Lon] = utm2deg(xx,yy,utmzone)
 
 % Argument checking
 %
-error(nargchk(3, 3, nargin)); %3 arguments required
+%narginchk(3, 3); %3 arguments required
 n1=length(xx);
 n2=length(yy);
 n3=size(utmzone,1);
