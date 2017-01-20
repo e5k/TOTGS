@@ -262,11 +262,11 @@ else
         
     % If projected coordinates
     else
-        if ~isnan(raw{1,5});                            % Check file
+        if ~isnan(raw{1,5})                            % Check file
              errordlg('The input file does not fit the coordinate system. Please double check it!');
              return  
         end 
-        east    = cell2mat(raw(2:end,1));               % Get easting
+        east    = cell2mat(raw(2:end,1));               % Get easting 
         nort    = cell2mat(raw(2:end,2));               % Get northing
         zone    = raw(2:end,3);                         % Get zone
         mass    = cell2mat(raw(2:end,4));               % Get mass
@@ -279,6 +279,10 @@ end
 
 
 %% Process data
+% In case some Nan were read, remove them
+idxNan = ~isnan(mass);
+mass    = mass(idxNan,:);
+gwt     = gwt(idxNan,:);
 % Flip matrices if in PHI units
 if get(t.diam_phi, 'Value') == 1
     gwt     = fliplr(gwt);
@@ -336,12 +340,19 @@ end
 
 % Creates and corrects coordinates
 % Coordinates in Lat/Lon
-if get(t.coor_ll, 'Value') == 1
+if get(t.coor_ll, 'Value') == 1   
+    % Remove nan
+    lat     = lat(idxNan, :);
+    lon     = lon(idxNan, :);
     [east, nort, zone]  = deg2utm(lat, lon);
     %zone                = cellstr(zone);    
 % Coordinates in UTM  
-else   
-    [lat, lon]          = utm2deg(east,nort,char(zone));
+else
+    % Remove nan
+    east        = east(idxNan, :);
+    nort        = nort(idxNan, :);
+    zone        = zone(idxNan, :);   
+    [lat, lon]  = utm2deg(east,nort,char(zone));
 end
 
 % Check if different zones
