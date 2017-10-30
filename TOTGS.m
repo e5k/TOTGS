@@ -10,6 +10,7 @@
 % Novembre 2015:    version 2
 % January 2016:     Added parameters of Inman (1952), minor bug fixes 
 % July 2016:        The delimitation of the 0-mass contour is now interactive
+% October 2017:     Updated plotting functions
 %
 % Email contact: costanza.bonadonna@unige.ch, sbiasse@hawaii.edu
 %
@@ -452,7 +453,8 @@ map.go = uicontrol(...
 map.a  = axes('Parent', map.fig, 'Position', [.1 .2 .8 .75], 'Units', 'normalized', 'Box', 'on');
 map.p  = plot(map.a, tr.lon, tr.lat, '.r','MarkerSize', 15); axis([min(tr.lon)-10 max(tr.lon+10) min(tr.lat)-10 max(tr.lat)+10]);
 xlabel('Longitude'); ylabel('Latitude');
-plot_google_map
+plot_google_map('Maptype', 'terrain')
+set(map.a,'layer','top')
 hold on
 
 % Handle results of the zero-line map
@@ -514,6 +516,7 @@ elseif strcmp(get(h, 'String'), 'Ok')
     if exist('ref_zone', 'var')
         tr.ref_zone = ref_zone;
     end
+    tr.idx   = [ones(size(tr.east)); zeros(size(lt))]; % Added index for plotting
     tr.east  = [tr.east; dummyE];
     tr.nort  = [tr.nort; dummyN];
     tr.zone  = [tr.zone; dummyZ];
@@ -578,11 +581,12 @@ alpha .7        % Transparency
 c = colorbar;   % Colorbar
 ylabel(c, 'Log10 Mass (kg in the cell)');
 % Plot points
-plot(tr.lon,tr.lat, '.r')
+plot(tr.lon(tr.idx==1),tr.lat(tr.idx==1), '.r')
+plot(tr.lon(tr.idx==0),tr.lat(tr.idx==0), 'ok', 'MarkerFaceColor', 'm', 'MarkerSize',5)
 xlabel('Longitude');
 ylabel('Latitude');
-plot_google_map
-
+plot_google_map('maptype', 'terrain')
+set(gca,'layer','top')
 
 res_voron(vorWt);
 
@@ -807,19 +811,19 @@ function [lt, ln] = plot_voronoi(x,y,k)
         if isfield(map, 'h2'); delete(map.h2); end;
         if isfield(map, 'h1'); delete(map.h1); end;
 
-        if k == 1;
+        if k == 1
             ln = [x;ln];
             lt = [y;lt];
-            map.h1 = plot(map.a, ln, lt,'xr');
+            map.h1 = plot(map.a, ln, lt,'xm');
         elseif k == 2
             lt = lt(2:end);
             ln = ln(2:end);
-            map.h1 = plot(map.a,ln,lt,'xr');
+            map.h1 = plot(map.a,ln,lt,'xm');
         end
 
         % Plot voronoi
         [tX, tY]   = voronoi([tr.lon;ln], [tr.lat;lt]);
-        map.h2     = plot(map.a, [tr.lon;ln], [tr.lat;lt], 'k.', tX, tY, 'k-', 'LineWidth', .2);
+        map.h2     = plot(map.a, [tr.lon;ln], [tr.lat;lt], '.m', tX, tY, 'k-', 'LineWidth', .2);
 
         % Reorder objects
         uistack(map.p, 'top');
