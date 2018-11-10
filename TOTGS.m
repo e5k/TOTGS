@@ -11,6 +11,8 @@
 % January 2016:     Added parameters of Inman (1952), minor bug fixes 
 % July 2016:        The delimitation of the 0-mass contour is now interactive
 % October 2017:     Updated plotting functions
+% Novemeber 2018:   Replaced dependencies for conversion between ll-utm
+%                   Deleted plot_google_map
 %
 % Email contact: costanza.bonadonna@unige.ch, sbiasse@hawaii.edu
 %
@@ -21,12 +23,13 @@
 % but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. 
 %
 % This program uses the following script:
-% utm2deg           by Rafael Palacios (http://www.mathworks.com/matlabcentral/fileexchange/10914-utm2deg)
-% deg2utm           by Rafael Palacios (http://www.mathworks.com/matlabcentral/fileexchange/10915-deg2utm)
-% plot_google_map   by Zohar Bar-Yehunda (http://www.mathworks.com/matlabcentral/fileexchange/27627-plotgooglemap)
+% ll2utm and utm2ll by François Beauducel (https://www.mathworks.com/matlabcentral/fileexchange/45699-ll2utm-and-utm2ll)
+
 
 function TOTGS
 global t
+
+addpath(genpath('Dependencies/'));
 
 scr = get(0,'ScreenSize');
 w   = 400;
@@ -38,7 +41,7 @@ t.fig = figure(...
     'Resize', 'off',...
     'Toolbar', 'none',...
     'Menubar', 'none',...
-    'Name', 'TOTGS v2',...
+    'Name', 'TOTGS v2.1',...
     'NumberTitle', 'off');
 
         t.main = uipanel(...
@@ -199,7 +202,6 @@ set(t.inp_p, 'callback', @txtread)
 set(t.zero_p, 'callback', @add_zero) 
 set(t.ok_p, 'callback', @Voronoi_TOTGS) 
 
-
 % Read input file     
 function txtread(~, ~)
 global t tr
@@ -207,7 +209,9 @@ global t tr
 tr = struct;                                            % Main storage structure
 
 %% Get input file
-[fl,pt] = uigetfile({'*.txt'; '*.xls'; '*.xlsx'});
+[fl,pt] = uigetfile({'*.txt;*.xls;*.xlsx', 'Compatible files';...
+    '*.txt', 'Tab-delimited text files (*.txt)';...
+    '*.xls;*.xlsx', 'Excel files'});
 if isequal(fl,0)
     return
 end
@@ -221,7 +225,7 @@ if strcmp(txt2read(end-3:end), '.txt')
 
     % If geographic coordinates
     if get(t.coor_ll, 'Value') == 1 
-        if size(raw.textdata, 2) ~= 3;                  % Check file
+        if size(raw.textdata, 2) ~= 3                  % Check file
              errordlg('The input file does not fit the coordinate system. Please double check it!');
              return
         end
@@ -230,13 +234,13 @@ if strcmp(txt2read(end-3:end), '.txt')
         mass    = str2double(raw.textdata(2:end,3));    % Get mass
     % If projected coordinates
     else   
-        if size(raw.textdata, 2) ~= 4;                  % Check file
+        if size(raw.textdata, 2) ~= 4                  % Check file
              errordlg('The input file does not fit the coordinate system. Please double check it!');
              return
         end
         east    = str2double(raw.textdata(2:end,1));    % Get easting
         nort    = str2double(raw.textdata(2:end,2));    % Get get northing
-        zone    = raw.textdata(2:end,3);                % Get zone 
+        zone    = str2double(raw.textdata(2:end,3));                % Get zone 
         mass    = str2double(raw.textdata(2:end,4));    % Get mass          
     end
     
@@ -249,7 +253,7 @@ else
     
     % If geographic coordinates
     if get(t.coor_ll, 'Value') == 1
-        if ~isnan(raw{1,4});                            % Check file
+        if ~isnan(raw{1,4})                            % Check file
              errordlg('The input file does not fit the coordinate system. Please double check it!');
              return  
         end 
@@ -269,7 +273,7 @@ else
         end 
         east    = cell2mat(raw(2:end,1));               % Get easting 
         nort    = cell2mat(raw(2:end,2));               % Get northing
-        zone    = raw(2:end,3);                         % Get zone
+        zone    = cell2mat(raw(2:end,3));               % Get zone
         mass    = cell2mat(raw(2:end,4));               % Get mass
         % Get data and order it by ascending bins (i.e. in mm: fine -> coarse; in phi: coarse -> fine)
         tmp     = sortrows([cell2mat(raw(1,6:end)); cell2mat(raw(2:end,6:end))]',1)';  
@@ -345,36 +349,29 @@ if get(t.coor_ll, 'Value') == 1
     % Remove nan
     lat     = lat(idxNan, :);
     lon     = lon(idxNan, :);
-    [east, nort, zone]  = deg2utm(lat, lon);
-    %zone                = cellstr(zone);    
+    [east, nort, zone]  = ll2utm(lat,lon);
+   
 % Coordinates in UTM  
 else
     % Remove nan
     east        = east(idxNan, :);
     nort        = nort(idxNan, :);
     zone        = zone(idxNan, :);   
-    [lat, lon]  = utm2deg(east,nort,char(zone));
+    [lat, lon]  = utm2ll(east,nort,zone);
 end
 
 % Check if different zones
-if length(unique(cellstr(zone))) > 1
-   dummy            = unique(cellstr(zone));
-   dummy1           = sscanf(dummy{1}, '%d');
-   dummy2           = sscanf(dummy{2}, '%d');
-
-   % Check if zones vary laterally
-   if dummy1 ~= dummy2
-       choice = questdlg('It seems your data crosses over several UTM zones. Which one would you like to use as a reference projection?', ...
-            'UTM', ...
-            dummy{1},dummy{2},dummy{1});
-       switch choice
-            case dummy{1}
-                ref_zone = dummy{1};		
-            case dummy{2}
-                ref_zone = dummy{2};
-       end
-       [east, zone] = correct_utm(east, zone, ref_zone, lat);
-   end  
+if length(unique(zone)) > 1
+    zns = unique(zone);
+    lst = cellstr(num2str(zns)); 
+    indx = listdlg('PromptString','Choose a reference UTM zone:',...
+                           'SelectionMode','single',...
+                           'ListString',lst);
+    tr.ref_zone = zns(indx);
+    zone = ones(size(zone)).*tr.ref_zone;
+    [east, nort] = ll2utm(lat,lon,zone);
+else
+    tr.ref_zone = unique(zone);
 end
 
 
@@ -384,9 +381,6 @@ tr.nort  = nort;
 tr.zone  = zone;
 tr.lat   = lat;
 tr.lon   = lon;
-if isfield(tr, 'ref_zone');
-    tr.ref_zone = ref_zone;
-end
 tr.m     = mass;
 tr.gClass= gClass;
 tr.gwt   = gwt;
@@ -399,7 +393,6 @@ else                                % If input in phi
     tr.pClass = gClass';
     tr.mClass = 2.^-gClass';
 end
-
 
 set(t.inp_e, 'String', txt2read); 
 set(t.zero_p, 'Enable', 'on');
@@ -453,7 +446,7 @@ map.go = uicontrol(...
 map.a  = axes('Parent', map.fig, 'Position', [.1 .2 .8 .75], 'Units', 'normalized', 'Box', 'on');
 map.p  = plot(map.a, tr.lon, tr.lat, '.r','MarkerSize', 15); axis([min(tr.lon)-10 max(tr.lon+10) min(tr.lat)-10 max(tr.lat)+10]);
 xlabel('Longitude'); ylabel('Latitude');
-plot_google_map('Maptype', 'terrain')
+%plot_google_map('Maptype', 'terrain')
 set(map.a,'layer','top')
 hold on
 
@@ -485,41 +478,42 @@ elseif strcmp(get(h, 'String'), 'Ok')
 
     lt  = get(zpoint, 'YData')';
     ln  = get(zpoint, 'XData')';
-
-    [dummyE, dummyN, dummyZ] = deg2utm(lt, ln);
-    dummyZ  = num2cell(dummyZ,2);
-    % If zero contour is over more than 1 zone
-    if length(unique(dummyZ)) > 1
-        dummy =  unique(dummyZ);
-        dummy1= sscanf(dummy{1}, '%d');
-        dummy2= sscanf(dummy{2}, '%d');
-        % Check if zones vary laterally
-        if dummy1 ~= dummy2 && ~isfield(tr, 'ref_zone')
-            choice = questdlg('It seems your data crosses over several UTM zones. Which one would you like to use as a reference projection?', ...
-                'UTM', ...
-                dummy{1},dummy{2},dummy{1});
-            switch choice
-                case dummy{1}
-                    ref_zone = dummy{1};
-                case dummy{2}
-                    ref_zone = dummy{2};
-            end
-            [dummyE, dummyZ] = correct_utm(dummyE, dummyZ, ref_zone, lt);
-        end
-        % If zero contour is over one zone, but which is different from
-        % reference zone§
-    elseif length(unique(dummyZ)) == 1 && isfield(tr, 'ref_zone') && ~strcmp(unique(dummyZ), tr.ref_zone)
-        [dummyE, dummyZ] = correct_utm(dummyE, dummyZ, tr.ref_zone, lt);
-    end
+    [east, nort,z] = ll2utm(lt,ln,tr.ref_zone);
     
-    % Update structure
-    if exist('ref_zone', 'var')
-        tr.ref_zone = ref_zone;
-    end
+%     [dummyE, dummyN, dummyZ] = deg2utm(lt, ln);
+%     dummyZ  = num2cell(dummyZ,2);
+%     % If zero contour is over more than 1 zone
+%     if length(unique(dummyZ)) > 1
+%         dummy =  unique(dummyZ);
+%         dummy1= sscanf(dummy{1}, '%d');
+%         dummy2= sscanf(dummy{2}, '%d');
+%         % Check if zones vary laterally
+%         if dummy1 ~= dummy2 && ~isfield(tr, 'ref_zone')
+%             choice = questdlg('It seems your data crosses over several UTM zones. Which one would you like to use as a reference projection?', ...
+%                 'UTM', ...
+%                 dummy{1},dummy{2},dummy{1});
+%             switch choice
+%                 case dummy{1}
+%                     ref_zone = dummy{1};
+%                 case dummy{2}
+%                     ref_zone = dummy{2};
+%             end
+%             [dummyE, dummyZ] = correct_utm(dummyE, dummyZ, ref_zone, lt);
+%         end
+%         % If zero contour is over one zone, but which is different from
+%         % reference zone§
+%     elseif length(unique(dummyZ)) == 1 && isfield(tr, 'ref_zone') && ~strcmp(unique(dummyZ), tr.ref_zone)
+%         [dummyE, dummyZ] = correct_utm(dummyE, dummyZ, tr.ref_zone, lt);
+%     end
+%     
+%     % Update structure
+%     if exist('ref_zone', 'var')
+%         tr.ref_zone = ref_zone;
+%     end
     tr.idx   = [ones(size(tr.east)); zeros(size(lt))]; % Added index for plotting
-    tr.east  = [tr.east; dummyE];
-    tr.nort  = [tr.nort; dummyN];
-    tr.zone  = [tr.zone; dummyZ];
+    tr.east  = [tr.east; east];
+    tr.nort  = [tr.nort; nort];
+    tr.zone  = [tr.zone; z];
     tr.lat   = [tr.lat; lt];
     tr.lon   = [tr.lon; ln];
     tr.m     = [tr.m; zeros(length(lt),1)];
@@ -585,7 +579,7 @@ plot(tr.lon(tr.idx==1),tr.lat(tr.idx==1), '.r')
 plot(tr.lon(tr.idx==0),tr.lat(tr.idx==0), 'ok', 'MarkerFaceColor', 'm', 'MarkerSize',5)
 xlabel('Longitude');
 ylabel('Latitude');
-plot_google_map('maptype', 'terrain')
+%plot_google_map('maptype', 'terrain')
 set(gca,'layer','top')
 
 res_voron(vorWt);
@@ -797,7 +791,7 @@ function [lt, ln] = plot_voronoi(x,y,k)
     global map tr
     
     if isfield(map, 'h1')
-        zpoint     = findobj(map.h1, 'Marker', 'x'); % Retrueve added points
+        zpoint     = findobj(map.h1, 'Marker', 'x'); % Retrieve added points
         lt  = get(zpoint, 'YData')';
         ln  = get(zpoint, 'XData')';
     else
@@ -808,8 +802,8 @@ function [lt, ln] = plot_voronoi(x,y,k)
     % Add and delete points
     if k < 3
         % If voronoi already exists, delete it
-        if isfield(map, 'h2'); delete(map.h2); end;
-        if isfield(map, 'h1'); delete(map.h1); end;
+        if isfield(map, 'h2'); delete(map.h2); end
+        if isfield(map, 'h1'); delete(map.h1); end
 
         if k == 1
             ln = [x;ln];
@@ -835,36 +829,6 @@ function [lt, ln] = plot_voronoi(x,y,k)
         set(map.add, 'Value', 0, 'String', 'Add points', 'Enable', 'off');
         return
     end
-        
-% Additional functions used throughout the code
-function [east_c, zone_c] = correct_utm(east, zone, ref_zone, lat)
-dummy  = unique(cellstr(zone));
-dummy1 = sscanf(dummy{1}, '%d');
-dummy2 = sscanf(dummy{2}, '%d');
-dummy3 = dummy{1}(length(dummy{1}));
-min_z  = min([dummy1, dummy2]);
-max_z  = max([dummy1, dummy2]);
-lim_W  = utmzone([num2str(min_z), dummy3]);
-lim_E  = utmzone([num2str(max_z), dummy3]);
-
-east_c = east;
-zone_c = cellstr(zone);
-
-if strcmp([num2str(min_z), ' ', dummy3], ref_zone)
-    idx = find(~strcmp(zone, ref_zone));
-    for i = 1:length(idx)
-        east_c(idx(i)) = east(idx(i)) + deg2utm(lat(idx(i)), lim_W(4)-0.001) - deg2utm(lat(idx(i)), lim_E(3)+0.001);
-        zone_c{idx(i)} = ref_zone;
-    end
-elseif strcmp([num2str(max_z), ' ', dummy3], ref_zone)
-    idx = find(~strcmp(zone, ref_zone));
-    for i = 1:length(idx)
-        east_c(idx(i)) = east(idx(i)) - deg2utm(lat(idx(i)), lim_W(4)-0.001) + deg2utm(lat(idx(i)), lim_E(3)+0.001);
-        zone_c{idx(i)} = ref_zone;
-    end
-end
-
-zone_c = char(zone_c);
 
 function out = get_perc(P, cum, pClass)
         % Median GS
@@ -883,839 +847,3 @@ end
 
 out = ((phi_high - phi_low) / (cum_high - cum_low) * (P - cum_low)) + phi_low;
 
-%% END OF TOTGS CODE
-function varargout = plot_google_map(varargin)
-% function h = plot_google_map(varargin)
-% Plots a google map on the current axes using the Google Static Maps API
-%
-% USAGE:
-% h = plot_google_map(Property, Value,...)
-% Plots the map on the given axes. Used also if no output is specified
-%
-% Or:
-% [lonVec latVec imag] = plot_google_map(Property, Value,...)
-% Returns the map without plotting it
-%
-% PROPERTIES:
-%    Axis           - Axis handle. If not given, gca is used. (LP)
-%    Height (640)   - Height of the image in pixels (max 640)
-%    Width  (640)   - Width of the image in pixels (max 640)
-%    Scale (2)      - (1/2) Resolution scale factor. Using Scale=2 will
-%                     double the resulotion of the downloaded image (up
-%                     to 1280x1280) and will result in finer rendering,
-%                     but processing time will be longer.
-%    MapType        - ('roadmap') Type of map to return. Any of [roadmap, 
-%                     satellite, terrain, hybrid]. See the Google Maps API for
-%                     more information. 
-%    Alpha (1)      - (0-1) Transparency level of the map (0 is fully
-%                     transparent). While the map is always moved to the
-%                     bottom of the plot (i.e. will not hide previously
-%                     drawn items), this can be useful in order to increase
-%                     readability if many colors are plotted 
-%                     (using SCATTER for example).
-%    ShowLabels (1) - (0/1) Controls whether to display city/street textual labels on the map
-%    Language       - (string) A 2 letter ISO 639-1 language code for displaying labels in a 
-%                     local language instead of English (where available).
-%                     For example, for Chinese use:
-%                     plot_google_map('language','zh')
-%                     For the list of codes, see:
-%                     http://en.wikipedia.org/wiki/List_of_ISO_639-1_codes
-%    Marker         - The marker argument is a text string with fields
-%                     conforming to the Google Maps API. The
-%                     following are valid examples:
-%                     '43.0738740,-70.713993' (default midsize orange marker)
-%                     '43.0738740,-70.713993,blue' (midsize blue marker)
-%                     '43.0738740,-70.713993,yellowa' (midsize yellow
-%                     marker with label "A")
-%                     '43.0738740,-70.713993,tinyredb' (tiny red marker
-%                     with label "B")
-%    Refresh (1)    - (0/1) defines whether to automatically refresh the
-%                     map upon zoom/pan action on the figure.
-%    AutoAxis (1)   - (0/1) defines whether to automatically adjust the axis
-%                     of the plot to avoid the map being stretched.
-%                     This will adjust the span to be correct
-%                     according to the shape of the map axes.
-%    FigureResizeUpdate (1) - (0/1) defines whether to automatically refresh the
-%                     map upon resizing the figure. This will ensure map
-%                     isn't stretched after figure resize.
-%    APIKey         - (string) set your own API key which you obtained from Google: 
-%                     http://developers.google.com/maps/documentation/staticmaps/#api_key
-%                     This will enable up to 25,000 map requests per day, 
-%                     compared to a few hundred requests without a key. 
-%                     To set the key, use:
-%                     plot_google_map('APIKey','SomeLongStringObtaindFromGoogle')
-%                     You need to do this only once to set the key.
-%                     To disable the use of a key, use:
-%                     plot_google_map('APIKey','')
-%
-% OUTPUT:
-%    h              - Handle to the plotted map
-%
-%    lonVect        - Vector of Longidute coordinates (WGS84) of the image 
-%    latVect        - Vector of Latidute coordinates (WGS84) of the image 
-%    imag           - Image matrix (height,width,3) of the map
-%
-% EXAMPLE - plot a map showing some capitals in Europe:
-%    lat = [48.8708   51.5188   41.9260   40.4312   52.523   37.982];
-%    lon = [2.4131    -0.1300    12.4951   -3.6788    13.415   23.715];
-%    plot(lon,lat,'.r','MarkerSize',20)
-%    plot_google_map
-%
-% References:
-%  http://www.mathworks.com/matlabcentral/fileexchange/24113
-%  http://www.maptiler.org/google-maps-coordinates-tile-bounds-projection/
-%  http://developers.google.com/maps/documentation/staticmaps/
-%
-% Acknowledgements:
-%  Val Schmidt for his submission of get_google_map.m
-%
-% Author:
-%  Zohar Bar-Yehuda
-%
-% Version 1.6 - 12/11/2015
-%       - Use system temp folder for writing image files (with fallback to current dir if missing write permissions)
-% Version 1.5 - 20/11/2014
-%       - Support for MATLAB R2014b
-%       - several fixes complex layouts: several maps in one figure, 
-%         map inside a panel, specifying axis handle as input (thanks to Luke Plausin)
-% Version 1.4 - 25/03/2014
-%       - Added the language parameter for showing labels in a local language
-%       - Display the URL on error to allow easier debugging of API errors
-% Version 1.3 - 06/10/2013
-%       - Improved functionality of AutoAxis, which now handles any shape of map axes. 
-%         Now also updates the extent of the map if the figure is resized.
-%       - Added the showLabels parameter which allows hiding the textual labels on the map.
-% Version 1.2 - 16/06/2012
-%       - Support use of the "scale=2" parameter by default for finer rendering (set scale=1 if too slow).
-%       - Auto-adjust axis extent so the map isn't stretched.
-%       - Set and use an API key which enables a much higher usage volume per day.
-% Version 1.1 - 25/08/2011
-
-persistent apiKey useTemp
-if isnumeric(apiKey)
-    % first run, check if API key file exists
-    if exist('api_key.mat','file')
-        load api_key
-    else
-        apiKey = '';
-    end
-end
-
-if isempty(useTemp)
-    % first run, check we we have wrtie access to the temp folder
-    try 
-        tempfilename = tempname;
-        fid = fopen(tempfilename, 'w');
-        if fid > 0
-            fclose(fid);
-            useTemp = true;
-            delete(tempfilename);
-        else
-            % Don't have write access to temp folder or it doesn't exist, fallback to current dir
-            useTemp = false;
-        end
-    catch
-        % in case tempname fails for some reason
-        useTemp = false;
-    end
-end
-
-hold on
-
-% Default parametrs
-axHandle = gca;
-height = 640;
-width = 640;
-scale = 2;
-maptype = 'roadmap';
-alphaData = 1;
-autoRefresh = 1;
-figureResizeUpdate = 1;
-autoAxis = 1;
-showLabels = 1;
-language = '';
-markeridx = 1;
-markerlist = {};
-
-% Handle input arguments
-if nargin >= 2
-    for idx = 1:2:length(varargin)
-        switch lower(varargin{idx})
-            case 'axis'
-                axHandle = varargin{idx+1};
-            case 'height'
-                height = varargin{idx+1};
-            case 'width'
-                width = varargin{idx+1};
-            case 'maptype'
-                maptype = varargin{idx+1};
-            case 'alpha'
-                alphaData = varargin{idx+1};
-            case 'refresh'
-                autoRefresh = varargin{idx+1};
-            case 'showlabels'
-                showLabels = varargin{idx+1};
-            case 'figureresizeupdate'
-                figureResizeUpdate = varargin{idx+1};
-            case 'language'
-                language = varargin{idx+1};
-            case 'marker'
-                markerlist{markeridx} = varargin{idx+1};
-                markeridx = markeridx + 1;
-            case 'autoaxis'
-                autoAxis = varargin{idx+1};
-            case 'apikey'
-                apiKey = varargin{idx+1}; % set new key
-                % save key to file
-                funcFile = which('plot_google_map.m');
-                pth = fileparts(funcFile);
-                keyFile = fullfile(pth,'api_key.mat');
-                save(keyFile,'apiKey')
-            otherwise
-                error(['Unrecognized variable: ' varargin{idx}])
-        end
-    end
-end
-if height > 640
-    height = 640;
-end
-if width > 640
-    width = 640;
-end
-
-% Store paramters in axis handle (for auto refresh callbacks)
-ud = get(axHandle, 'UserData');
-if isempty(ud)
-    % explicitly set as struct to avoid warnings
-    ud = struct;
-end
-ud.gmap_params = varargin;
-set(axHandle, 'UserData', ud);
-
-curAxis = axis(axHandle);
-% Enforce Latitude constraints of EPSG:900913 
-if curAxis(3) < -85
-    curAxis(3) = -85;
-end
-if curAxis(4) > 85
-    curAxis(4) = 85;
-end
-% Enforce longitude constrains
-if curAxis(1) < -180
-    curAxis(1) = -180;
-end
-if curAxis(1) > 180
-    curAxis(1) = 0;
-end
-if curAxis(2) > 180
-    curAxis(2) = 180;
-end
-if curAxis(2) < -180
-    curAxis(2) = 0;
-end
-
-if isequal(curAxis,[0 1 0 1]) % probably an empty figure
-    % display world map
-    curAxis = [-200 200 -85 85];
-    axis(curAxis)
-end
-
-
-if autoAxis
-    % adjust current axis limit to avoid strectched maps
-    [xExtent,yExtent] = latLonToMeters(curAxis(3:4), curAxis(1:2) );
-    xExtent = diff(xExtent); % just the size of the span
-    yExtent = diff(yExtent); 
-    % get axes aspect ratio
-    drawnow
-    org_units = get(axHandle,'Units');
-    set(axHandle,'Units','Pixels')
-    ax_position = get(axHandle,'position');        
-    set(axHandle,'Units',org_units)
-    aspect_ratio = ax_position(4) / ax_position(3);
-    
-    if xExtent*aspect_ratio > yExtent        
-        centerX = mean(curAxis(1:2));
-        centerY = mean(curAxis(3:4));
-        spanX = (curAxis(2)-curAxis(1))/2;
-        spanY = (curAxis(4)-curAxis(3))/2;
-       
-        % enlarge the Y extent
-        spanY = spanY*xExtent*aspect_ratio/yExtent; % new span
-        if spanY > 85
-            spanX = spanX * 85 / spanY;
-            spanY = spanY * 85 / spanY;
-        end
-        curAxis(1) = centerX-spanX;
-        curAxis(2) = centerX+spanX;
-        curAxis(3) = centerY-spanY;
-        curAxis(4) = centerY+spanY;
-    elseif yExtent > xExtent*aspect_ratio
-        
-        centerX = mean(curAxis(1:2));
-        centerY = mean(curAxis(3:4));
-        spanX = (curAxis(2)-curAxis(1))/2;
-        spanY = (curAxis(4)-curAxis(3))/2;
-        % enlarge the X extent
-        spanX = spanX*yExtent/(xExtent*aspect_ratio); % new span
-        if spanX > 180
-            spanY = spanY * 180 / spanX;
-            spanX = spanX * 180 / spanX;
-        end
-        
-        curAxis(1) = centerX-spanX;
-        curAxis(2) = centerX+spanX;
-        curAxis(3) = centerY-spanY;
-        curAxis(4) = centerY+spanY;
-    end            
-    % Enforce Latitude constraints of EPSG:900913
-    if curAxis(3) < -85
-        curAxis(3:4) = curAxis(3:4) + (-85 - curAxis(3));
-    end
-    if curAxis(4) > 85
-        curAxis(3:4) = curAxis(3:4) + (85 - curAxis(4));
-    end
-    axis(axHandle, curAxis); % update axis as quickly as possible, before downloading new image
-    drawnow
-end
-
-% Delete previous map from plot (if exists)
-if nargout <= 1 % only if in plotting mode
-    curChildren = get(axHandle,'children');
-    map_objs = findobj(curChildren,'tag','gmap');
-    bd_callback = [];
-    for idx = 1:length(map_objs)
-        if ~isempty(get(map_objs(idx),'ButtonDownFcn'))
-            % copy callback properties from current map
-            bd_callback = get(map_objs(idx),'ButtonDownFcn');
-        end
-    end
-    delete(map_objs)
-    
-end
-
-% Calculate zoom level for current axis limits
-[xExtent,yExtent] = latLonToMeters(curAxis(3:4), curAxis(1:2) );
-minResX = diff(xExtent) / width;
-minResY = diff(yExtent) / height;
-minRes = max([minResX minResY]);
-tileSize = 256;
-initialResolution = 2 * pi * 6378137 / tileSize; % 156543.03392804062 for tileSize 256 pixels
-zoomlevel = floor(log2(initialResolution/minRes));
-
-% Enforce valid zoom levels
-if zoomlevel < 0 
-    zoomlevel = 0;
-end
-if zoomlevel > 19 
-    zoomlevel = 19;
-end
-
-% Calculate center coordinate in WGS1984
-lat = (curAxis(3)+curAxis(4))/2;
-lon = (curAxis(1)+curAxis(2))/2;
-
-% Construct query URL
-preamble = 'http://maps.googleapis.com/maps/api/staticmap';
-location = ['?center=' num2str(lat,10) ',' num2str(lon,10)];
-zoomStr = ['&zoom=' num2str(zoomlevel)];
-sizeStr = ['&scale=' num2str(scale) '&size=' num2str(width) 'x' num2str(height)];
-maptypeStr = ['&maptype=' maptype ];
-if ~isempty(apiKey)
-    keyStr = ['&key=' apiKey];
-else
-    keyStr = '';
-end
-markers = '&markers=';
-for idx = 1:length(markerlist)
-    if idx < length(markerlist)
-        markers = [markers markerlist{idx} '%7C'];
-    else
-        markers = [markers markerlist{idx}];
-    end
-end
-if showLabels == 0
-    labelsStr = '&style=feature:all|element:labels|visibility:off';
-else
-    labelsStr = '';
-end
-if ~isempty(language)
-    languageStr = ['&language=' language];
-else
-    languageStr = '';
-end
-    
-if ismember(maptype,{'satellite','hybrid'})
-    filename = 'tmp.jpg';
-    format = '&format=jpg';
-    convertNeeded = 0;
-else
-    filename = 'tmp.png';
-    format = '&format=png';
-    convertNeeded = 1;
-end
-sensor = '&sensor=false';
-url = [preamble location zoomStr sizeStr maptypeStr format markers labelsStr languageStr sensor keyStr];
-
-% Get the image
-if useTemp
-    filepath = fullfile(tempdir, filename);
-else
-    filepath = filename;
-end
-
-try
-    urlwrite(url,filepath);
-catch % error downloading map
-    warning(['Unable to download map form Google Servers.\n' ...
-        'Matlab error was: %s\n\n' ...
-        'Possible reasons: missing write permissions, no network connection, quota exceeded, or some other error.\n' ...
-        'Consider using an API key if quota problems persist.\n\n' ...
-        'To debug, try pasting the following URL in your browser, which may result in a more informative error:\n%s'], lasterr, url);
-    varargout{1} = [];
-    varargout{2} = [];
-    varargout{3} = [];
-    return
-end
-[M Mcolor] = imread(filepath);
-M = cast(M,'double');
-delete(filepath); % delete temp file
-width = size(M,2);
-height = size(M,1);
-
-% Calculate a meshgrid of pixel coordinates in EPSG:900913
-centerPixelY = round(height/2);
-centerPixelX = round(width/2);
-[centerX,centerY] = latLonToMeters(lat, lon ); % center coordinates in EPSG:900913
-curResolution = initialResolution / 2^zoomlevel/scale; % meters/pixel (EPSG:900913)
-xVec = centerX + ((1:width)-centerPixelX) * curResolution; % x vector
-yVec = centerY + ((height:-1:1)-centerPixelY) * curResolution; % y vector
-[xMesh,yMesh] = meshgrid(xVec,yVec); % construct meshgrid 
-
-% convert meshgrid to WGS1984
-[lonMesh,latMesh] = metersToLatLon(xMesh,yMesh);
-
-% We now want to convert the image from a colormap image with an uneven
-% mesh grid, into an RGB truecolor image with a uniform grid.
-% This would enable displaying it with IMAGE, instead of PCOLOR.
-% Advantages are:
-% 1) faster rendering
-% 2) makes it possible to display together with other colormap annotations (PCOLOR, SCATTER etc.)
-
-% Convert image from colormap type to RGB truecolor (if PNG is used)
-if convertNeeded
-    imag = zeros(height,width,3);
-    for idx = 1:3
-        imag(:,:,idx) = reshape(Mcolor(M(:)+1+(idx-1)*size(Mcolor,1)),height,width);
-    end
-else
-    imag = M/255;
-end
-
-% Next, project the data into a uniform WGS1984 grid
-sizeFactor = 1; % factoring of new image
-uniHeight = round(height*sizeFactor);
-uniWidth = round(width*sizeFactor);
-latVect = linspace(latMesh(1,1),latMesh(end,1),uniHeight);
-lonVect = linspace(lonMesh(1,1),lonMesh(1,end),uniWidth);
-[uniLonMesh,uniLatMesh] = meshgrid(lonVect,latVect);
-uniImag = zeros(uniHeight,uniWidth,3);
-
-% old version (projection using INTERP2)
-% for idx = 1:3
-%      % 'nearest' method is the fastest. difference from other methods is neglible
-%          uniImag(:,:,idx) =  interp2(lonMesh,latMesh,imag(:,:,idx),uniLonMesh,uniLatMesh,'nearest');
-% end
-uniImag =  myTurboInterp2(lonMesh,latMesh,imag,uniLonMesh,uniLatMesh);
-
-if nargout <= 1 % plot map
-    % display image
-    hold(axHandle, 'on');
-    h = image(lonVect,latVect,uniImag, 'Parent', axHandle);
-    set(axHandle,'YDir','Normal')
-    set(h,'tag','gmap')
-    set(h,'AlphaData',alphaData)
-    
-    % add a dummy image to allow pan/zoom out to x2 of the image extent
-    h_tmp = image(lonVect([1 end]),latVect([1 end]),zeros(2),'Visible','off', 'Parent', axHandle);
-    set(h_tmp,'tag','gmap')
-    
-    % older version (display without conversion to uniform grid)
-    % h =pcolor(lonMesh,latMesh,(M));
-    % colormap(Mcolor)
-    % caxis([0 255])
-    % warning off % to avoid strange rendering warnings
-    % shading flat
-   
-    uistack(h,'bottom') % move map to bottom (so it doesn't hide previously drawn annotations)
-    axis(axHandle, curAxis) % restore original zoom
-    if nargout == 1
-        varargout{1} = h;
-    end
-    
-    % if auto-refresh mode - override zoom callback to allow autumatic 
-    % refresh of map upon zoom actions.
-    figHandle = axHandle;
-    while ~strcmpi(get(figHandle, 'Type'), 'figure')
-        % Recursively search for parent figure in case axes are in a panel
-        figHandle = get(figHandle, 'Parent');
-    end
-    
-    zoomHandle = zoom(axHandle);   
-    panHandle = pan(figHandle); % This isn't ideal, doesn't work for contained axis    
-    if autoRefresh        
-        set(zoomHandle,'ActionPostCallback',@update_google_map);          
-        set(panHandle, 'ActionPostCallback', @update_google_map);        
-    else % disable zoom override
-        set(zoomHandle,'ActionPostCallback',[]);
-        set(panHandle, 'ActionPostCallback',[]);
-    end
-    
-    % set callback for figure resize function, to update extents if figure
-    % is streched.
-    if figureResizeUpdate &&isempty(get(figHandle, 'ResizeFcn'))
-        % set only if not already set by someone else
-        set(figHandle, 'ResizeFcn', @update_google_map_fig);       
-    end    
-    
-    % set callback properties 
-    set(h,'ButtonDownFcn',bd_callback);
-else % don't plot, only return map
-    varargout{1} = lonVect;
-    varargout{2} = latVect;
-    varargout{3} = uniImag;
-end
-
-
-% Coordinate transformation functions
-
-function [lon,lat] = metersToLatLon(x,y)
-% Converts XY point from Spherical Mercator EPSG:900913 to lat/lon in WGS84 Datum
-originShift = 2 * pi * 6378137 / 2.0; % 20037508.342789244
-lon = (x ./ originShift) * 180;
-lat = (y ./ originShift) * 180;
-lat = 180 / pi * (2 * atan( exp( lat * pi / 180)) - pi / 2);
-
-function [x,y] = latLonToMeters(lat, lon )
-% Converts given lat/lon in WGS84 Datum to XY in Spherical Mercator EPSG:900913"
-originShift = 2 * pi * 6378137 / 2.0; % 20037508.342789244
-x = lon * originShift / 180;
-y = log(tan((90 + lat) * pi / 360 )) / (pi / 180);
-y = y * originShift / 180;
-
-function ZI = myTurboInterp2(X,Y,Z,XI,YI)
-% An extremely fast nearest neighbour 2D interpolation, assuming both input
-% and output grids consist only of squares, meaning:
-% - uniform X for each column
-% - uniform Y for each row
-XI = XI(1,:);
-X = X(1,:);
-YI = YI(:,1);
-Y = Y(:,1);
-
-xiPos = nan*ones(size(XI));
-xLen = length(X);
-yiPos = nan*ones(size(YI));
-yLen = length(Y);
-% find x conversion
-xPos = 1;
-for idx = 1:length(xiPos)
-    if XI(idx) >= X(1) && XI(idx) <= X(end)
-        while xPos < xLen && X(xPos+1)<XI(idx)
-            xPos = xPos + 1;
-        end
-        diffs = abs(X(xPos:xPos+1)-XI(idx));
-        if diffs(1) < diffs(2)
-            xiPos(idx) = xPos;
-        else
-            xiPos(idx) = xPos + 1;
-        end
-    end
-end
-% find y conversion
-yPos = 1;
-for idx = 1:length(yiPos)
-    if YI(idx) <= Y(1) && YI(idx) >= Y(end)
-        while yPos < yLen && Y(yPos+1)>YI(idx)
-            yPos = yPos + 1;
-        end
-        diffs = abs(Y(yPos:yPos+1)-YI(idx));
-        if diffs(1) < diffs(2)
-            yiPos(idx) = yPos;
-        else
-            yiPos(idx) = yPos + 1;
-        end
-    end
-end
-ZI = Z(yiPos,xiPos,:);
-
-function update_google_map(obj,evd)
-% callback function for auto-refresh
-drawnow;
-try
-    axHandle = evd.Axes;
-catch ex
-    % Event doesn't contain the correct axes. Panic!
-    axHandle = gca;
-end
-ud = get(axHandle, 'UserData');
-if isfield(ud, 'gmap_params')
-    params = ud.gmap_params;
-    plot_google_map(params{:});
-end
-
-function update_google_map_fig(obj,evd)
-% callback function for auto-refresh
-drawnow;
-axes_objs = findobj(get(gcf,'children'),'type','axes');
-for idx = 1:length(axes_objs)
-    if ~isempty(findobj(get(axes_objs(idx),'children'),'tag','gmap'));
-        ud = get(axes_objs(idx), 'UserData');
-        if isfield(ud, 'gmap_params')
-            params = ud.gmap_params;
-        else
-            params = {};
-        end
-        
-        % Add axes to inputs if needed
-        if ~sum(strcmpi(params, 'Axis'))
-            params = [params, {'Axis', axes_objs(idx)}];
-        end
-        plot_google_map(params{:});
-    end
-end
-
-function  [x,y,utmzone] = deg2utm(Lat,Lon)
-% -------------------------------------------------------------------------
-% [x,y,utmzone] = deg2utm(Lat,Lon)
-%
-% Author: 
-%   Rafael Palacios
-%   Universidad Pontificia Comillas
-%   Madrid, Spain
-% Version: Apr/06, Jun/06, Aug/06, Aug/06
-% Aug/06: fixed a problem (found by Rodolphe Dewarrat) related to southern 
-%    hemisphere coordinates. 
-% Aug/06: corrected m-Lint warnings
-%-------------------------------------------------------------------------
-
-% Argument checking
-%
-%error(nargchk(2, 2, nargin));  %2 arguments required
-n1=length(Lat);
-n2=length(Lon);
-if (n1~=n2)
-   error('Lat and Lon vectors should have the same length');
-end
-
-
-% Memory pre-allocation
-%
-x=zeros(n1,1);
-y=zeros(n1,1);
-utmzone(n1,:)='60 X';
-
-% Main Loop
-%
-for i=1:n1
-   la=Lat(i);
-   lo=Lon(i);
-
-   sa = 6378137.000000 ; sb = 6356752.314245;
-         
-   %e = ( ( ( sa ^ 2 ) - ( sb ^ 2 ) ) ^ 0.5 ) / sa;
-   e2 = ( ( ( sa ^ 2 ) - ( sb ^ 2 ) ) ^ 0.5 ) / sb;
-   e2cuadrada = e2 ^ 2;
-   c = ( sa ^ 2 ) / sb;
-   %alpha = ( sa - sb ) / sa;             %f
-   %ablandamiento = 1 / alpha;   % 1/f
-
-   lat = la * ( pi / 180 );
-   lon = lo * ( pi / 180 );
-
-   Huso = fix( ( lo / 6 ) + 31);
-   S = ( ( Huso * 6 ) - 183 );
-   deltaS = lon - ( S * ( pi / 180 ) );
-
-   if (la<-72), Letra='C';
-   elseif (la<-64), Letra='D';
-   elseif (la<-56), Letra='E';
-   elseif (la<-48), Letra='F';
-   elseif (la<-40), Letra='G';
-   elseif (la<-32), Letra='H';
-   elseif (la<-24), Letra='J';
-   elseif (la<-16), Letra='K';
-   elseif (la<-8), Letra='L';
-   elseif (la<0), Letra='M';
-   elseif (la<8), Letra='N';
-   elseif (la<16), Letra='P';
-   elseif (la<24), Letra='Q';
-   elseif (la<32), Letra='R';
-   elseif (la<40), Letra='S';
-   elseif (la<48), Letra='T';
-   elseif (la<56), Letra='U';
-   elseif (la<64), Letra='V';
-   elseif (la<72), Letra='W';
-   else Letra='X';
-   end
-
-   a = cos(lat) * sin(deltaS);
-   epsilon = 0.5 * log( ( 1 +  a) / ( 1 - a ) );
-   nu = atan( tan(lat) / cos(deltaS) ) - lat;
-   v = ( c / ( ( 1 + ( e2cuadrada * ( cos(lat) ) ^ 2 ) ) ) ^ 0.5 ) * 0.9996;
-   ta = ( e2cuadrada / 2 ) * epsilon ^ 2 * ( cos(lat) ) ^ 2;
-   a1 = sin( 2 * lat );
-   a2 = a1 * ( cos(lat) ) ^ 2;
-   j2 = lat + ( a1 / 2 );
-   j4 = ( ( 3 * j2 ) + a2 ) / 4;
-   j6 = ( ( 5 * j4 ) + ( a2 * ( cos(lat) ) ^ 2) ) / 3;
-   alfa = ( 3 / 4 ) * e2cuadrada;
-   beta = ( 5 / 3 ) * alfa ^ 2;
-   gama = ( 35 / 27 ) * alfa ^ 3;
-   Bm = 0.9996 * c * ( lat - alfa * j2 + beta * j4 - gama * j6 );
-   xx = epsilon * v * ( 1 + ( ta / 3 ) ) + 500000;
-   yy = nu * v * ( 1 + ta ) + Bm;
-
-   if (yy<0)
-       yy=9999999+yy;
-   end
-
-   x(i)=xx;
-   y(i)=yy;
-   utmzone(i,:)=sprintf('%02d %c',Huso,Letra);
-end
-
-function  [Lat,Lon] = utm2deg(xx,yy,utmzone)
-% -------------------------------------------------------------------------
-% [Lat,Lon] = utm2deg(x,y,utmzone)
-%
-% Description: Function to convert vectors of UTM coordinates into Lat/Lon vectors (WGS84).
-% Some code has been extracted from UTMIP.m function by Gabriel Ruiz Martinez.
-%
-% Inputs:
-%    x, y , utmzone.
-%
-% Outputs:
-%    Lat: Latitude vector.   Degrees.  +ddd.ddddd  WGS84
-%    Lon: Longitude vector.  Degrees.  +ddd.ddddd  WGS84
-%
-% Example 1:
-% x=[ 458731;  407653;  239027;  230253;  343898;  362850];
-% y=[4462881; 5126290; 4163083; 3171843; 4302285; 2772478];
-% utmzone=['30 T'; '32 T'; '11 S'; '28 R'; '15 S'; '51 R'];
-% [Lat, Lon]=utm2deg(x,y,utmzone);
-% fprintf('%11.6f ',lat)
-%    40.315430   46.283902   37.577834   28.645647   38.855552   25.061780
-% fprintf('%11.6f ',lon)
-%    -3.485713    7.801235 -119.955246  -17.759537  -94.799019  121.640266
-%
-% Example 2: If you need Lat/Lon coordinates in Degrees, Minutes and Seconds
-% [Lat, Lon]=utm2deg(x,y,utmzone);
-% LatDMS=dms2mat(deg2dms(Lat))
-%LatDMS =
-%    40.00         18.00         55.55
-%    46.00         17.00          2.01
-%    37.00         34.00         40.17
-%    28.00         38.00         44.33
-%    38.00         51.00         19.96
-%    25.00          3.00         42.41
-% LonDMS=dms2mat(deg2dms(Lon))
-%LonDMS =
-%    -3.00         29.00          8.61
-%     7.00         48.00          4.40
-%  -119.00         57.00         18.93
-%   -17.00         45.00         34.33
-%   -94.00         47.00         56.47
-%   121.00         38.00         24.96
-%
-% Author: 
-%   Rafael Palacios
-%   Universidad Pontificia Comillas
-%   Madrid, Spain
-% Version: Apr/06, Jun/06, Aug/06
-% Aug/06: corrected m-Lint warnings
-%-------------------------------------------------------------------------
-
-% Argument checking
-%
-%narginchk(3, 3); %3 arguments required
-n1=length(xx);
-n2=length(yy);
-n3=size(utmzone,1);
-if (n1~=n2 || n1~=n3)
-   error('x,y and utmzone vectors should have the same number or rows');
-end
-c=size(utmzone,2);
-if (c~=4)
-   error('utmzone should be a vector of strings like "30 T"');
-end
-
-   
- 
-% Memory pre-allocation
-%
-Lat=zeros(n1,1);
-Lon=zeros(n1,1);
-
-
-% Main Loop
-%
-for i=1:n1
-   if (utmzone(i,4)>'X' || utmzone(i,4)<'C')
-      fprintf('utm2deg: Warning utmzone should be a vector of strings like "30 T", not "30 t"\n');
-   end
-   if (utmzone(i,4)>'M')
-      hemis='N';   % Northern hemisphere
-   else
-      hemis='S';
-   end
-
-   x=xx(i);
-   y=yy(i);
-   zone=str2double(utmzone(i,1:2));
-
-   sa = 6378137.000000 ; sb = 6356752.314245;
-  
-%   e = ( ( ( sa ^ 2 ) - ( sb ^ 2 ) ) ^ 0.5 ) / sa;
-   e2 = ( ( ( sa ^ 2 ) - ( sb ^ 2 ) ) ^ 0.5 ) / sb;
-   e2cuadrada = e2 ^ 2;
-   c = ( sa ^ 2 ) / sb;
-%   alpha = ( sa - sb ) / sa;             %f
-%   ablandamiento = 1 / alpha;   % 1/f
-
-   X = x - 500000;
-   
-   if hemis == 'S' || hemis == 's'
-       Y = y - 10000000;
-   else
-       Y = y;
-   end
-    
-   S = ( ( zone * 6 ) - 183 ); 
-   lat =  Y / ( 6366197.724 * 0.9996 );                                    
-   v = ( c / ( ( 1 + ( e2cuadrada * ( cos(lat) ) ^ 2 ) ) ) ^ 0.5 ) * 0.9996;
-   a = X / v;
-   a1 = sin( 2 * lat );
-   a2 = a1 * ( cos(lat) ) ^ 2;
-   j2 = lat + ( a1 / 2 );
-   j4 = ( ( 3 * j2 ) + a2 ) / 4;
-   j6 = ( ( 5 * j4 ) + ( a2 * ( cos(lat) ) ^ 2) ) / 3;
-   alfa = ( 3 / 4 ) * e2cuadrada;
-   beta = ( 5 / 3 ) * alfa ^ 2;
-   gama = ( 35 / 27 ) * alfa ^ 3;
-   Bm = 0.9996 * c * ( lat - alfa * j2 + beta * j4 - gama * j6 );
-   b = ( Y - Bm ) / v;
-   Epsi = ( ( e2cuadrada * a^ 2 ) / 2 ) * ( cos(lat) )^ 2;
-   Eps = a * ( 1 - ( Epsi / 3 ) );
-   nab = ( b * ( 1 - Epsi ) ) + lat;
-   senoheps = ( exp(Eps) - exp(-Eps) ) / 2;
-   Delt = atan(senoheps / (cos(nab) ) );
-   TaO = atan(cos(Delt) * tan(nab));
-   longitude = (Delt *(180 / pi ) ) + S;
-   latitude = ( lat + ( 1 + e2cuadrada* (cos(lat)^ 2) - ( 3 / 2 ) * e2cuadrada * sin(lat) * cos(lat) * ( TaO - lat ) ) * ( TaO - lat ) ) * ...
-                    (180 / pi);
-   
-   Lat(i)=latitude;
-   Lon(i)=longitude;
-   
-end
