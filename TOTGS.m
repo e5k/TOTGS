@@ -6,6 +6,12 @@
 % By: Costanza Bonadonna (SOEST, University of Hawaii) and Giacomo Marani (Autonomous Systems Laboratory, University of Hawaii)
 % Copyright (C) 2004 C. Bonadonna and G. Marani
 %
+% Data in the examples is from:
+% ï»¿ Alfano, F., Bonadonna, C., Watt, S., Connor, C., Volentik, A., Pyle, D.M., 2016.
+%       Reconstruction of total grain size distribution of the climactic phase
+%       of a long-lasting eruption: the example of the 2008â€“2013 ChaitÃ©n
+%       eruption. Bull. Volcanol. 78, 46. doi:10.1007/s00445-016-1040-5
+%
 % Updates by Sebastien Biass (Departement of Earth Sciences, University of Geneva, Switzerland, 2012)
 % Novembre 2015:    version 2
 % January 2016:     Added parameters of Inman (1952), minor bug fixes 
@@ -13,8 +19,9 @@
 % October 2017:     Updated plotting functions
 % Novemeber 2018:   Replaced dependencies for conversion between ll-utm
 %                   Deleted plot_google_map
+% December 2018:    Fixed bug in the computation of the CDF
 %
-% Email contact: costanza.bonadonna@unige.ch, sbiasse@hawaii.edu
+% Email contact: costanza.bonadonna _AT_ unige.ch, sbiasse _AT_ hawaii.edu
 %
 % This program is free software; 
 % you can redistribute it and/or modify it under the terms of the 
@@ -23,8 +30,9 @@
 % but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. 
 %
 % This program uses the following script:
-% ll2utm and utm2ll by François Beauducel (https://www.mathworks.com/matlabcentral/fileexchange/45699-ll2utm-and-utm2ll)
-
+%   ll2utm and utm2ll by Francois Beauducel (https://www.mathworks.com/matlabcentral/fileexchange/45699-ll2utm-and-utm2ll)
+%
+% More information can be found at https://e5k.github.io/pages/totgs
 
 function TOTGS
 global t
@@ -479,37 +487,7 @@ elseif strcmp(get(h, 'String'), 'Ok')
     lt  = get(zpoint, 'YData')';
     ln  = get(zpoint, 'XData')';
     [east, nort,z] = ll2utm(lt,ln,tr.ref_zone);
-    
-%     [dummyE, dummyN, dummyZ] = deg2utm(lt, ln);
-%     dummyZ  = num2cell(dummyZ,2);
-%     % If zero contour is over more than 1 zone
-%     if length(unique(dummyZ)) > 1
-%         dummy =  unique(dummyZ);
-%         dummy1= sscanf(dummy{1}, '%d');
-%         dummy2= sscanf(dummy{2}, '%d');
-%         % Check if zones vary laterally
-%         if dummy1 ~= dummy2 && ~isfield(tr, 'ref_zone')
-%             choice = questdlg('It seems your data crosses over several UTM zones. Which one would you like to use as a reference projection?', ...
-%                 'UTM', ...
-%                 dummy{1},dummy{2},dummy{1});
-%             switch choice
-%                 case dummy{1}
-%                     ref_zone = dummy{1};
-%                 case dummy{2}
-%                     ref_zone = dummy{2};
-%             end
-%             [dummyE, dummyZ] = correct_utm(dummyE, dummyZ, ref_zone, lt);
-%         end
-%         % If zero contour is over one zone, but which is different from
-%         % reference zone§
-%     elseif length(unique(dummyZ)) == 1 && isfield(tr, 'ref_zone') && ~strcmp(unique(dummyZ), tr.ref_zone)
-%         [dummyE, dummyZ] = correct_utm(dummyE, dummyZ, tr.ref_zone, lt);
-%     end
-%     
-%     % Update structure
-%     if exist('ref_zone', 'var')
-%         tr.ref_zone = ref_zone;
-%     end
+
     tr.idx   = [ones(size(tr.east)); zeros(size(lt))]; % Added index for plotting
     tr.east  = [tr.east; east];
     tr.nort  = [tr.nort; nort];
@@ -575,8 +553,13 @@ alpha .7        % Transparency
 c = colorbar;   % Colorbar
 ylabel(c, 'Log10 Mass (kg in the cell)');
 % Plot points
-plot(tr.lon(tr.idx==1),tr.lat(tr.idx==1), '.r')
-plot(tr.lon(tr.idx==0),tr.lat(tr.idx==0), 'ok', 'MarkerFaceColor', 'm', 'MarkerSize',5)
+if isfield(tr, 'idx')
+    plot(tr.lon(tr.idx==1),tr.lat(tr.idx==1), '.r')
+    plot(tr.lon(tr.idx==0),tr.lat(tr.idx==0), 'ok', 'MarkerFaceColor', 'm', 'MarkerSize',5)
+else
+    plot(tr.lon,tr.lat, '.r')
+end
+
 xlabel('Longitude');
 ylabel('Latitude');
 %plot_google_map('maptype', 'terrain')
@@ -589,9 +572,11 @@ function res_voron(vorWt)
 global tr tmp r
 
 % Cumulative
-cum = zeros(size(tr.pClass));
-for i = 1:length(cum)
-    cum(i) = 1-sum(vorWt(1:i))/sum(vorWt);
+
+
+cum = ones(size(tr.pClass));
+for i = 2:length(cum)
+    cum(i) = 1-sum(vorWt(1:i-1))/sum(vorWt);
 end
 
 % Prepare result table
