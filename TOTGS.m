@@ -9,7 +9,7 @@
 % Data in the examples is from:
 % ﻿ Alfano, F., Bonadonna, C., Watt, S., Connor, C., Volentik, A., Pyle, D.M., 2016.
 %       Reconstruction of total grain size distribution of the climactic phase
-%       of a long-lasting eruption: the example of the 2008–2013 Chaitén
+%       of a long-lasting eruption: the example of the 2008-2013 Chaiten
 %       eruption. Bull. Volcanol. 78, 46. doi:10.1007/s00445-016-1040-5
 %
 % Updates by Sebastien Biass (Departement of Earth Sciences, University of Geneva, Switzerland, 2012)
@@ -32,7 +32,6 @@
 % This program uses the following script:
 %   ll2utm and utm2ll by Francois Beauducel (https://www.mathworks.com/matlabcentral/fileexchange/45699-ll2utm-and-utm2ll)
 %
-% More information can be found at https://e5k.github.io/pages/totgs
 
 function TOTGS
 global t
@@ -590,11 +589,13 @@ end
 
 
 % Calculate parameters according to Table 1 of Inman (1952)
-gs_50       = get_perc(.5, cum, tr.pClass);    % Median GS
-gs_5        = get_perc(.05, cum, tr.pClass);   % 5th percentile
-gs_16       = get_perc(.16, cum, tr.pClass);   % 16th percentile
-gs_84       = get_perc(.84, cum, tr.pClass);   % 84th percentile
-gs_95       = get_perc(.95, cum, tr.pClass);   % 95th percentile
+% Percentile values are interpolated, not fitted
+gs_50       = interp1(cum, tr.pClass, .50);       % Median GS
+gs_5        = interp1(cum, tr.pClass, .05);       % 5th percentile
+gs_16       = interp1(cum, tr.pClass, .16);       % 16th percentile
+gs_84       = interp1(cum, tr.pClass, .84);       % 84th percentile
+gs_95       = interp1(cum, tr.pClass, .95);       % 95th percentile
+
 gs_std_new  = (gs_84 - gs_16)/2;               % std
 gs_mean     = (gs_16 + gs_84)/2;               % Mean
 gs_skw      = (gs_mean - gs_50)/gs_std_new;    % Skewness
@@ -815,20 +816,4 @@ function [lt, ln] = plot_voronoi(x,y,k)
         return
     end
 
-function out = get_perc(P, cum, pClass)
-        % Median GS
-[~, idx] = min(abs(cum-P));
-if cum(idx) < P
-    cum_low  = cum(idx);
-    phi_low  = pClass(idx);
-    cum_high = cum(idx+1);
-    phi_high = pClass(idx+1);
-else
-    cum_low  = cum(idx-1);
-    phi_low  = pClass(idx-1);
-    cum_high = cum(idx);
-    phi_high = pClass(idx);
-end
-
-out = ((phi_high - phi_low) / (cum_high - cum_low) * (P - cum_low)) + phi_low;
 
