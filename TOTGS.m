@@ -590,11 +590,11 @@ end
 
 % Calculate parameters according to Table 1 of Inman (1952)
 % Percentile values are interpolated, not fitted
-gs_50       = interp1(cum, tr.pClass, .50);       % Median GS
-gs_5        = interp1(cum, tr.pClass, .05);       % 5th percentile
-gs_16       = interp1(cum, tr.pClass, .16);       % 16th percentile
-gs_84       = interp1(cum, tr.pClass, .84);       % 84th percentile
-gs_95       = interp1(cum, tr.pClass, .95);       % 95th percentile
+gs_50       = getInman(cum, tr.pClass, .50);       % Median GS
+gs_5        = getInman(cum, tr.pClass, .05);       % 5th percentile
+gs_16       = getInman(cum, tr.pClass, .16);       % 16th percentile
+gs_84       = getInman(cum, tr.pClass, .84);       % 84th percentile
+gs_95       = getInman(cum, tr.pClass, .95);       % 95th percentile
 
 gs_std_new  = (gs_84 - gs_16)/2;               % std
 gs_mean     = (gs_16 + gs_84)/2;               % Mean
@@ -725,11 +725,13 @@ r.fig = figure(...
         set(get(AX(2), 'Ylabel'), 'FontWeight', 'bold');
         title('TOTGS', 'FontWeight', 'bold', 'Color', [1 1 1]);
         xlabel('Diameter (phi)', 'FontWeight', 'bold', 'Color', [1 1 1]);
-        
+
         set(H1, 'FaceColor', [.8 .8 .8]);
         set(H2, 'Color', [.9 .5 0]);
         set(H2, 'LineStyle', '-');
         set(AX(2), 'XTickLabel', []);
+        set(AX(2), 'YTick', [5,16,25,50,75,84,95]);
+        grid(AX(2), 'on');
         set(AX(1), 'YColor', [1 1 1]);
         set(AX(1), 'XColor', [1 1 1]);
         set(AX(2), 'YColor', [.9 .5 0]);
@@ -740,6 +742,10 @@ r.fig = figure(...
         set(r.exp_pdf_p, 'callback', @exp_pdf)
         set(r.close_p, 'callback', @p_close)
 
+function gs = getInman(x,y,pct)       
+    [x, idx] = unique(x);
+    gs = interp1(x, y(idx), pct);
+        
 % Callbacks to the results GUI        
 function p_close(~, ~)
     close(gcf)
