@@ -1,6 +1,7 @@
 
 
 # TOTGS
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.3590597.svg)](https://doi.org/10.5281/zenodo.3590597)
 
 *TOTGS* is an upgraded version of the code provided in Bonadonna and Houghton (2005) for the calculation of the total grainsize distribution of tephra deposits. 
 Visit https://e5k.github.io/pages/totgs for the latest updates.
@@ -17,7 +18,8 @@ Documentation can be found at [this address](https://e5k.github.io/pages/totgs).
 
 ## Citation
 If you happened to find this script useful, we would greatly appreciate if you could cite as:
-> Biass, S., Bonadonna, C., (2014), TOTGS: Total grainsize distribution of tephra fallout, https://vhub.org/resources/3297.
+> Sébastien Biass, Costanza Bonadonna, 2014. TOTGS. doi:10.5281/zenodo.3590597
+>[DOI Reference](https://zenodo.org/record/3590597#.XgBgjy2p2Vk)
 
 ## Dependencies
 
