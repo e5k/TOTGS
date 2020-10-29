@@ -321,7 +321,7 @@ end
 
 % Check there are no missing data
 if ~isempty(gwt(isnan(gwt)))
-    choice = questdlg(sprintf('It seems there are missing data. Would you like to feel them with 0?'),...
+    choice = questdlg(sprintf('It seems there are missing data. Would you like to fill them with 0?'),...
         '', 'No', 'Yes', 'Yes');
     switch choice
         case 'No'
