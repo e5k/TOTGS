@@ -20,6 +20,7 @@
 % Novemeber 2018:   Replaced dependencies for conversion between ll-utm
 %                   Deleted plot_google_map
 % December 2018:    Fixed bug in the computation of the CDF
+% November 2022:    Added option to load/save
 %
 % Email contact: costanza.bonadonna _AT_ unige.ch, sbiasse _AT_ hawaii.edu
 %
@@ -50,6 +51,10 @@ t.fig = figure(...
     'Menubar', 'none',...
     'Name', 'TOTGS v2.1',...
     'NumberTitle', 'off');
+
+    t.menu0 = uimenu(t.fig, 'Label', 'File');
+    t.m01 = uimenu(t.menu0, 'Label', 'Load', 'Accelerator','O', 'callback', @loadMe);
+    t.m02 = uimenu(t.menu0, 'Label', 'Save', 'Accelerator','S', 'Enable', 'off', 'callback', @saveMe);
 
         t.main = uipanel(...
             'parent', t.fig,...
@@ -404,6 +409,7 @@ end
 set(t.inp_e, 'String', txt2read); 
 set(t.zero_p, 'Enable', 'on');
 set(t.ok_p, 'Enable', 'on');
+set(t.m02, 'Enable', 'on');
 
 % Interactive map to add the zero line
 function add_zero(~, ~)                        
@@ -453,7 +459,11 @@ map.go = uicontrol(...
 map.a  = axes('Parent', map.fig, 'Position', [.1 .2 .8 .75], 'Units', 'normalized', 'Box', 'on');
 map.p  = plot(map.a, tr.lon, tr.lat, '.r','MarkerSize', 15); axis([min(tr.lon)-10 max(tr.lon+10) min(tr.lat)-10 max(tr.lat)+10]);
 xlabel('Longitude'); ylabel('Latitude');
-%plot_google_map('Maptype', 'terrain')
+try 
+    plot_google_map('maptype', 'terrain');
+catch
+    warning("Can't plot Google map background");
+end
 set(map.a,'layer','top')
 hold on
 
@@ -561,7 +571,14 @@ end
 
 xlabel('Longitude');
 ylabel('Latitude');
-%plot_google_map('maptype', 'terrain')
+
+try 
+    plot_google_map('maptype', 'terrain');
+catch
+    warning("Can't plot Google map background");
+end
+
+
 set(gca,'layer','top')
 
 res_voron(vorWt);
@@ -822,4 +839,33 @@ function [lt, ln] = plot_voronoi(x,y,k)
         return
     end
 
+function saveMe(~,~)
+global tr t
 
+    prefs.coor_ll = get(t.coor_ll, 'Value');
+    prefs.diam_phi = get(t.diam_phi, 'Value');
+    prefs.coor_utm = get(t.coor_utm, 'Value');
+    prefs.diam_mm = get(t.diam_mm, 'Value');
+    prefs.pth = get(t.inp_e, 'String');
+
+    [fl, pth] = uiputfile('*.mat');
+    if fl>0
+        save(fullfile(pth,fl), 'prefs', 'tr')
+    end
+
+function loadMe(~,~)
+global tr t
+    [fl, pth] = uigetfile('*.mat');
+    S = load(fullfile(pth, fl));
+    tr = S.tr;
+
+    set(t.inp_e, 'String', S.prefs.pth); 
+    set(t.coor_ll, 'Value', S.prefs.coor_ll);
+    set(t.diam_phi, 'Value', S.prefs.diam_phi);
+    set(t.coor_utm, 'Value', S.prefs.coor_utm);
+    set(t.diam_mm, 'Value', S.prefs.diam_mm);
+    set(t.zero_p, 'Enable', 'on');
+    set(t.ok_p, 'Enable', 'on');
+    set(t.m02, 'Enable', 'on');
+    
+    
