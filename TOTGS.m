@@ -49,13 +49,14 @@ t.fig = figure(...
     'Resize', 'off',...
     'Toolbar', 'none',...
     'Menubar', 'none',...
-    'Name', 'TOTGS v2.1',...
+    'Name', 'TOTGS v2.2',...
     'NumberTitle', 'off');
 
     t.menu0 = uimenu(t.fig, 'Label', 'File');
     t.m01 = uimenu(t.menu0, 'Label', 'Load', 'Accelerator','O', 'callback', @loadMe);
     t.m02 = uimenu(t.menu0, 'Label', 'Save', 'Accelerator','S', 'Enable', 'off', 'callback', @saveMe);
-
+    t.menu1 = uimenu(t.fig, 'Label', 'Tools');
+    t.m11 = uimenu(t.menu1, 'Label', 'Sensitivity to 0-mass line', 'Enable', 'off', 'callback', @sensitivity);
         t.main = uipanel(...
             'parent', t.fig,...
             'units', 'normalized',...
@@ -410,6 +411,7 @@ set(t.inp_e, 'String', txt2read);
 set(t.zero_p, 'Enable', 'on');
 set(t.ok_p, 'Enable', 'on');
 set(t.m02, 'Enable', 'on');
+set(t.m11, 'Enable', 'on');
 
 % Interactive map to add the zero line
 function add_zero(~, ~)                        
@@ -508,14 +510,85 @@ elseif strcmp(get(h, 'String'), 'Ok')
     
     close(map.fig);
 end
-  
-% Voronoi functions             
-function Voronoi_TOTGS(~, ~)
-global tr
+
+% Sensitivity analysis on the 0-mass line
+function sensitivity(h,~)
+global tr 
+
+answer = inputdlg({'Vent latitude', 'Vent longitude', 'Minimum (-0.2 means 80% of the original distance)', 'Maximum', 'Step interval'}, '0-mass sensitivity', [1,50], {'','','-0.2', '1', '0.1'});
+
+if isempty(answer)
+    return;
+end
+
+% Get results from GUI
+latV = str2double(answer{1});
+lonV = str2double(answer{2});
+vec = str2double(answer{3}):str2double(answer{5}):str2double(answer{4});
+
+% Convert to UTM
+[eastV, nortV] = ll2utm(latV, lonV, tr.ref_zone);
+
+% Find coordinates of 0-mass points
+idx0 = tr.m==0;
+
+% Transform to polar coordinates
+dx = tr.east(idx0)-eastV;
+dy = tr.nort(idx0)-nortV;
+[theta, rho] = cart2pol(dx, dy);
+
+% Vary rho
+% vec = -.2:.1:1;
+east0 = repmat(tr.east,1,numel(vec));
+nort0 = repmat(tr.nort,1,numel(vec));
+% lat0 = zeros(size(east0));
+% lon0 = zeros(size(east0));
+
+% Prepare storage table 
+row = cell(size(vec));
+for i=1:length(vec)
+    if vec(i)==0
+        row{i} = 'Reference';
+    else
+        row{i} = [num2str(vec(i)*100),'%'];
+    end
+end
+T = table('Size', [length(vec), 2], 'VariableTypes', {'double', 'double'}, 'VariableNames', {'Median', 'Sigma'}, 'RowNames',row);
+
+% Main loop going through the different 0-mass lines
+for i = 1:length(vec)
+    rhoTmp = rho + vec(i).*rho;
+    [eastTmp, nortTmp] = pol2cart(theta, rhoTmp);
+    east0(idx0,i) = eastTmp + eastV;
+    nort0(idx0,i) = nortTmp + nortV;
+%     [lat0(:,i), lon0(:,i)] = utm2ll(east0(:,i), nort0(:,i), ones(nnz(idx0),1).*tr.zone(1));
+
+    [vorWt, ~, ~, ~] = get_VORONOI_mass(tr, east0(:,i), nort0(:,i));
+
+    % Repeating a lot of what is done in res_VOR but don't care
+    % Cumulative
+    cum = ones(size(tr.pClass));
+    for j = 2:length(cum)
+        cum(j) = 1-sum(vorWt(1:j-1))/sum(vorWt);
+    end
+    
+    % Calculate parameters according to Table 1 of Inman (1952)
+    % Percentile values are interpolated, not fitted
+    T(i,1) = {getInman(cum, tr.pClass, .50)};       % Median GS
+    gs_16       = getInman(cum, tr.pClass, .16);       % 16th percentile
+    gs_84       = getInman(cum, tr.pClass, .84);       % 84th percentile
+    T(i,2)  = {(gs_84 - gs_16)/2};               % std0
+end
+
+disp(T)
+
+% Get the mass from VORONOI, implemented on 2022-11-21 for sensitivity
+% analysis
+function [vorWt, PolyMass, v, c] = get_VORONOI_mass(tr, east, nort)
 
 % Voronoi
-[v,c]    = voronoin([tr.east,tr.nort]);
-nPoints  = size(tr.east,1);
+[v,c]    = voronoin([east,nort]);
+nPoints  = size(east,1);
 nClass   = size(tr.gClass',1);
 % Mass computation
 PolyMass = zeros(nPoints,1);
@@ -544,6 +617,13 @@ TotalGran = sum(gmTot);
 for i=1:nClass
     vorWt(i) = gmTot(i)/TotalGran*100;
 end
+
+
+% Voronoi functions             
+function Voronoi_TOTGS(~, ~)
+global tr
+
+[vorWt, PolyMass, v, c] = get_VORONOI_mass(tr, tr.east, tr.nort);
 
 % Plot voronoi cells
 [vg,cg]  = voronoin([tr.lon,tr.lat]);                           % Recalculate Voronoi with geographic coordinates for plotting
@@ -588,8 +668,6 @@ function res_voron(vorWt)
 global tr tmp r
 
 % Cumulative
-
-
 cum = ones(size(tr.pClass));
 for i = 2:length(cum)
     cum(i) = 1-sum(vorWt(1:i-1))/sum(vorWt);
@@ -867,5 +945,5 @@ global tr t
     set(t.zero_p, 'Enable', 'on');
     set(t.ok_p, 'Enable', 'on');
     set(t.m02, 'Enable', 'on');
-    
+    set(t.m11, 'Enable', 'on');
     
